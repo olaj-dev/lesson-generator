@@ -155,14 +155,16 @@ textarea{resize:vertical;min-height:72px;font-size:.88rem;line-height:1.45;}
           <div class="field">
             <label>Provider</label>
             <select id="f-provider" onchange="onProviderChange()">
-              <!-- <option value="openai">OpenAI (ChatGPT)</option> -->
-              <option value="gemini">Google Gemini</option>
+              <option value="openai">OpenAI (ChatGPT)</option>
+              <option value="gemini" selected>Google Gemini</option>
             </select>
           </div>
           <div class="field">
             <label>Model</label>
             <input id="f-model" list="model-suggestions">
             <datalist id="model-suggestions"></datalist>
+            <button type="button" class="btn secondary" style="margin-top:6px;padding:6px 12px;font-size:.78rem;" onclick="checkModels()">Check available models</button>
+            <p class="hint" id="f-model-hint"></p>
           </div>
         </div>
         <div class="field">
@@ -374,6 +376,85 @@ async function callProvider(provider, apiKey, model, prompt){
   return provider === 'gemini' ? callGemini(apiKey, model, prompt) : callOpenAI(apiKey, model, prompt);
 }
 
+async function listGeminiModels(apiKey){
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+    headers: { 'x-goog-api-key': apiKey }
+  });
+  if(!res.ok){
+    const errText = await res.text().catch(()=> '');
+    throw new Error(`Gemini API error (${res.status}): ${errText.slice(0,200)}`);
+  }
+  const data = await res.json();
+  return (data.models || [])
+    .filter(m => (m.supportedGenerationMethods||[]).includes('generateContent'))
+    .map(m => (m.name||'').replace(/^models\//,''))
+    .filter(Boolean)
+    .sort();
+}
+
+async function listOpenAIModels(apiKey){
+  const res = await fetch('https://api.openai.com/v1/models', {
+    headers: { 'Authorization': 'Bearer ' + apiKey }
+  });
+  if(!res.ok){
+    const errText = await res.text().catch(()=> '');
+    throw new Error(`OpenAI API error (${res.status}): ${errText.slice(0,200)}`);
+  }
+  const data = await res.json();
+  const exclude = /embedding|whisper|tts|dall-e|moderation|image|audio|realtime|transcribe/i;
+  return (data.data || [])
+    .map(m => m.id)
+    .filter(id => id && !exclude.test(id))
+    .sort();
+}
+
+async function checkModels(){
+  const provider = document.getElementById('f-provider').value;
+  const apiKey = document.getElementById('f-apikey').value.trim();
+  const hintEl = document.getElementById('f-model-hint');
+  if(!apiKey){ hintEl.textContent = 'Enter your API key first.'; hintEl.classList.add('error'); return; }
+  hintEl.classList.remove('error');
+  hintEl.textContent = 'Checking available models...';
+  try{
+    const models = provider === 'gemini' ? await listGeminiModels(apiKey) : await listOpenAIModels(apiKey);
+    if(!models.length){ hintEl.textContent = 'No compatible models found for this key.'; return; }
+    const dl = document.getElementById('model-suggestions');
+    dl.innerHTML = models.map(m => `<option value="${escAttr(m)}">`).join('');
+    const modelInput = document.getElementById('f-model');
+    if(!models.includes(modelInput.value.trim())){ modelInput.value = models[0]; }
+    hintEl.textContent = `Found ${models.length} model(s) compatible with this key — pick one from the Model field.`;
+  }catch(e){
+    hintEl.textContent = 'Could not fetch models: ' + (e.message || String(e));
+    hintEl.classList.add('error');
+  }
+}
+
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+function isRetryable(err){
+  const msg = (err && err.message) || '';
+  return /\b(503|429|UNAVAILABLE|overloaded|rate limit)\b/i.test(msg);
+}
+
+async function withRetry(fn, onRetryMsg){
+  const delays = [1500, 4000, 9000]; // up to 3 retries, growing backoff
+  let lastErr;
+  for(let attempt=0; attempt<=delays.length; attempt++){
+    try{
+      return await fn();
+    }catch(e){
+      lastErr = e;
+      if(attempt < delays.length && isRetryable(e)){
+        if(onRetryMsg) onRetryMsg(`Model is busy, retrying in ${Math.round(delays[attempt]/1000)}s (attempt ${attempt+2} of ${delays.length+1})...`);
+        await sleep(delays[attempt]);
+        continue;
+      }
+      throw lastErr;
+    }
+  }
+  throw lastErr;
+}
+
 async function generateAll(){
   const provider = document.getElementById('f-provider').value;
   const apiKey = document.getElementById('f-apikey').value.trim();
@@ -393,22 +474,41 @@ async function generateAll(){
 
   for(let i=0;i<validSubjects.length;i++){
     const s = validSubjects[i];
-    statusEl.textContent = `Generating ${i+1} of ${validSubjects.length}: ${s.name}...`;
-    try{
-      const data = await generateOne(provider, apiKey, model, header, s);
-      renderNote(header, s, data);
-    }catch(e){
-      const div = document.createElement('div');
-      div.className = 'note';
-      div.innerHTML = `<p class="error">Could not generate ${escHtml(s.name)}: ${escHtml(e.message||String(e))}</p>`;
-      output.appendChild(div);
-    }
+    const slot = document.createElement('div');
+    output.appendChild(slot);
+    await generateIntoSlot(slot, provider, apiKey, model, header, s, i+1, validSubjects.length);
   }
   statusEl.textContent = `Done. Generated ${validSubjects.length} lesson note(s).`;
   genBtn.disabled = false;
   document.getElementById('dl-btn').disabled = false;
   document.getElementById('docx-btn').disabled = false;
   document.getElementById('print-btn').disabled = false;
+}
+
+async function generateIntoSlot(slot, provider, apiKey, model, header, s, num, total){
+  const statusEl = document.getElementById('global-status');
+  const label = num && total ? `${num} of ${total}: ${s.name}` : s.name;
+  statusEl.textContent = `Generating ${label}...`;
+  try{
+    const data = await withRetry(
+      () => generateOne(provider, apiKey, model, header, s),
+      (msg) => { statusEl.textContent = `${s.name}: ${msg}`; }
+    );
+    slot.innerHTML = '';
+    renderNote(header, s, data, slot);
+  }catch(e){
+    slot.className = 'note';
+    slot.innerHTML = `<p class="error">Could not generate ${escHtml(s.name)}: ${escHtml(e.message||String(e))}</p>
+      <button class="btn secondary" onclick="retrySubject(this)">Retry this subject</button>`;
+    slot._retry = { provider, apiKey, model, header, s };
+  }
+}
+
+function retrySubject(btn){
+  const slot = btn.closest('.note');
+  const ctx = slot._retry;
+  if(!ctx) return;
+  generateIntoSlot(slot, ctx.provider, ctx.apiKey, ctx.model, ctx.header, ctx.s);
 }
 
 async function generateOne(provider, apiKey, model, header, s){
@@ -442,9 +542,8 @@ The five "minutes" values must sum to ${durationMinutes}. Cover every subtopic l
   return await callProvider(provider, apiKey, model, prompt);
 }
 
-function renderNote(header, s, data){
-  const output = document.getElementById('output');
-  const div = document.createElement('div');
+function renderNote(header, s, data, targetSlot){
+  const div = targetSlot || document.createElement('div');
   div.className = 'note';
   const materialsList = (data.materials||[]).join(', ');
   div.innerHTML = `
@@ -468,7 +567,7 @@ function renderNote(header, s, data){
       </div>
     `).join('')}
   `;
-  output.appendChild(div);
+  if(!targetSlot){ document.getElementById('output').appendChild(div); }
   div._data = {header, subject: s, note: data};
 }
 
