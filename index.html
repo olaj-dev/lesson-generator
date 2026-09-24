@@ -119,6 +119,22 @@ textarea{resize:vertical;min-height:72px;font-size:.88rem;line-height:1.45;}
 [contenteditable="true"]:focus{background:var(--accent-soft);border-radius:4px;}
 
 @media print{ .no-print{display:none!important;} body{background:#fff;color:#000;} .note{border:none;page-break-after:always;} }
+
+/* ---- Footer ---- */
+.footer{margin-top:36px;text-align:center;}
+.footer-line{height:1px;background:linear-gradient(90deg,transparent,var(--line) 20%,var(--line) 80%,transparent);margin-bottom:26px;}
+.footer-credit{font-family:var(--font-head);font-size:.85rem;color:var(--sub);margin:0 0 14px;}
+.footer-credit b{color:var(--ink);}
+.footer-links{display:flex;justify-content:center;gap:22px;flex-wrap:wrap;}
+.footer-links a{
+  display:inline-flex;align-items:center;gap:6px;color:var(--sub);text-decoration:none;
+  font-size:.85rem;font-weight:500;transition:color .15s;
+}
+.footer-links a:hover{color:var(--accent-a);}
+.footer-links .ico{
+  display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;background:var(--accent-soft);color:var(--accent-a);font-size:.72rem;font-weight:700;
+}
 </style>
 </head>
 <body>
@@ -127,9 +143,7 @@ textarea{resize:vertical;min-height:72px;font-size:.88rem;line-height:1.45;}
   <div class="hero no-print">
     <div class="badge">✏️ AI Lesson Note Assistant</div>
     <h1>Scheme of work in. Lesson notes out.</h1>
-    <p>Built for DE HIGH-RANK MONTESSORI SCHOOLS</p>
-    <p>Just paste the week's scheme of work per subject and get a complete, editable lesson note in your school's format.</p>
-    <p class="credit">Built by Olajcodes</p>
+    <p>Built for DE HIGH-RANK MONTESSORI SCHOOLS — paste this week's scheme of work per subject and get a complete, editable lesson note in your school's format.</p>
   </div>
 
   <div class="layout">
@@ -209,6 +223,25 @@ textarea{resize:vertical;min-height:72px;font-size:.88rem;line-height:1.45;}
   </div>
 
   <div id="output"></div>
+
+  <footer class="footer no-print">
+    <div class="footer-line"></div>
+    <p class="footer-credit">Built by <b>Olajcodes</b></p>
+    <div class="footer-links">
+      <a href="mailto:olajideabioye01@gmail.com">
+        <span class="ico">✉</span> Email
+      </a>
+      <a href="https://github.com/Olajcodes" target="_blank" rel="noopener">
+        <span class="ico">⌥</span> GitHub
+      </a>
+      <a href="https://www.linkedin.com/in/abioye-olajide-abdullateef/" target="_blank" rel="noopener">
+        <span class="ico">in</span> LinkedIn
+      </a>
+      <a href="https://wa.me/2348143055319" target="_blank" rel="noopener">
+        <span class="ico">☎</span> WhatsApp
+      </a>
+    </div>
+  </footer>
 </div>
 
 <script>
